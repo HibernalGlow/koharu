@@ -31,6 +31,13 @@ jobs:
         with:
           key: koharu-cli-${{ matrix.target }}
 
+      - name: 装 linux 需要的系统库（fontconfig 是 yeslogic-fontconfig-sys 的 build.rs 要 .pc）
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt update
+          sudo apt install --no-install-recommends -y \
+            pkg-config libfontconfig1-dev libasound2-dev libssl-dev
+
       - name: Build the headless runner
         run: cargo build --release -p koharu-pipeline --bin run --target ${{ matrix.target }}
 
