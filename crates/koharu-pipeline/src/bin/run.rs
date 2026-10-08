@@ -64,6 +64,11 @@ struct Arguments {
     #[arg(long)]
     vision: bool,
 
+    /// `--provider openai-compatible` 的输出约束方式（默认 `json-schema`，与上游一致；
+    /// DeepSeek 这类只认 `json-object`）
+    #[arg(long, value_enum, default_value = "json-schema")]
+    response_format: endpoint::ResponseFormatChoice,
+
     #[arg(long)]
     cpu: bool,
 }
@@ -193,6 +198,7 @@ async fn main() -> Result<()> {
         Config::memory(endpoint::providers(
             arguments.provider,
             arguments.base_url.as_deref(),
+            arguments.response_format,
         )?),
         device,
     )?;

@@ -14,10 +14,28 @@ use crate::{
 
 const DEFAULT_BASE_URL: &str = "http://localhost:11434/v1";
 
+/// 端点接受的输出约束方式。
+///
+/// 上游只发 `json_schema`（严格结构化输出），但有些端点（例如 DeepSeek）不支持这一型，
+/// 会在 400 里回 `This response_format type is unavailable now`。这里把它做成显式配置项，
+/// 而不是在出错时悄悄降级 —— 降级会改变输出的约束强度，必须看得见。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum OpenAiCompatibleResponseFormat {
+    /// 上游行为：`{"type":"json_schema","json_schema":{…strict…}}`
+    #[default]
+    JsonSchema,
+    /// 只声明要 JSON：`{"type":"json_object"}`
+    JsonObject,
+    /// 完全不发 `response_format`（提示词里仍然要求返回 JSON）
+    None,
+}
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(default)]
 pub struct OpenAiCompatibleConfig {
     pub base_url: Option<Url>,
+    pub response_format: OpenAiCompatibleResponseFormat,
 }
 
 impl Default for OpenAiCompatibleConfig {
@@ -26,6 +44,7 @@ impl Default for OpenAiCompatibleConfig {
             base_url: Some(
                 Url::parse(DEFAULT_BASE_URL).expect("default OpenAI-compatible URL is valid"),
             ),
+            response_format: OpenAiCompatibleResponseFormat::default(),
         }
     }
 }
@@ -70,14 +89,7 @@ pub(super) async fn translate(
         reasoning_effort: generation
             .reasoning
             .map(|enabled| if enabled { "medium" } else { "none" }),
-        response_format: ResponseFormat {
-            kind: "json_schema",
-            json_schema: JsonSchema {
-                name: "manga_translation",
-                strict: true,
-                schema: prompt::output_schema(request.segments.len()),
-            },
-        },
+        response_format: build_response_format(config.response_format, request.segments.len()),
     };
     let http = client
         .post(endpoint(config.base_url.as_ref(), "chat/completions"))
@@ -124,6 +136,26 @@ pub(super) async fn models(client: &Client, config: &OpenAiCompatibleConfig) -> 
         .collect())
 }
 
+fn build_response_format(
+    choice: OpenAiCompatibleResponseFormat,
+    segments: usize,
+) -> Option<ResponseFormat> {
+    match choice {
+        OpenAiCompatibleResponseFormat::JsonSchema => Some(ResponseFormat::JsonSchema {
+            kind: "json_schema",
+            json_schema: JsonSchema {
+                name: "manga_translation",
+                strict: true,
+                schema: prompt::output_schema(segments),
+            },
+        }),
+        OpenAiCompatibleResponseFormat::JsonObject => {
+            Some(ResponseFormat::JsonObject { kind: "json_object" })
+        }
+        OpenAiCompatibleResponseFormat::None => None,
+    }
+}
+
 fn endpoint(base_url: Option<&Url>, suffix: &str) -> String {
     let base_url = base_url.map_or(DEFAULT_BASE_URL, Url::as_str);
     format!(
@@ -149,14 +181,22 @@ struct ChatRequest<'a> {
     presence_penalty: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning_effort: Option<&'static str>,
-    response_format: ResponseFormat,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<ResponseFormat>,
 }
 
 #[derive(Serialize)]
-struct ResponseFormat {
-    #[serde(rename = "type")]
-    kind: &'static str,
-    json_schema: JsonSchema,
+#[serde(untagged)]
+enum ResponseFormat {
+    JsonSchema {
+        #[serde(rename = "type")]
+        kind: &'static str,
+        json_schema: JsonSchema,
+    },
+    JsonObject {
+        #[serde(rename = "type")]
+        kind: &'static str,
+    },
 }
 
 #[derive(Serialize)]
@@ -249,14 +289,10 @@ mod tests {
             frequency_penalty: None,
             presence_penalty: None,
             reasoning_effort: Some("none"),
-            response_format: ResponseFormat {
-                kind: "json_schema",
-                json_schema: JsonSchema {
-                    name: "manga_translation",
-                    strict: true,
-                    schema: prompt::output_schema(2),
-                },
-            },
+            response_format: build_response_format(
+                OpenAiCompatibleResponseFormat::JsonSchema,
+                2,
+            ),
         };
         let value = serde_json::to_value(body).unwrap();
 

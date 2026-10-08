@@ -26,7 +26,7 @@ pub use grok::GrokConfig;
 pub use lm_studio::LmStudioConfig;
 pub use minimax::MiniMaxConfig;
 pub use openai::OpenAiConfig;
-pub use openai_compatible::OpenAiCompatibleConfig;
+pub use openai_compatible::{OpenAiCompatibleConfig, OpenAiCompatibleResponseFormat};
 pub use openrouter::OpenRouterConfig;
 
 use crate::{

@@ -12,7 +12,33 @@
 
 use anyhow::{Result, bail};
 use clap::ValueEnum;
-use koharu_translator::{ModelSelection, Provider, ProvidersConfig};
+use koharu_translator::{
+    ModelSelection, OpenAiCompatibleResponseFormat, Provider, ProvidersConfig,
+};
+
+/// `--response-format`：端点接受的输出约束方式。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ResponseFormatChoice {
+    /// 上游行为：严格 JSON Schema（不是每个端点都支持）
+    #[value(name = "json-schema")]
+    JsonSchema,
+    /// 只声明 JSON（DeepSeek 这类只认这一型）
+    #[value(name = "json-object")]
+    JsonObject,
+    /// 不带任何输出约束
+    #[value(name = "none")]
+    None,
+}
+
+impl From<ResponseFormatChoice> for OpenAiCompatibleResponseFormat {
+    fn from(choice: ResponseFormatChoice) -> Self {
+        match choice {
+            ResponseFormatChoice::JsonSchema => Self::JsonSchema,
+            ResponseFormatChoice::JsonObject => Self::JsonObject,
+            ResponseFormatChoice::None => Self::None,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum TranslationBackend {
@@ -53,6 +79,7 @@ pub(crate) fn selection(
 pub(crate) fn providers(
     backend: TranslationBackend,
     base_url: Option<&str>,
+    response_format: ResponseFormatChoice,
 ) -> Result<ProvidersConfig> {
     let mut providers = ProvidersConfig::default();
     if backend == TranslationBackend::OpenAiCompatible {
@@ -65,6 +92,7 @@ pub(crate) fn providers(
             url.parse()
                 .map_err(|error| anyhow::anyhow!("--base-url 不是合法 URL（{url}）：{error}"))?,
         );
+        providers.openai_compatible.response_format = response_format.into();
     }
     Ok(providers)
 }
