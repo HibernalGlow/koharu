@@ -502,6 +502,7 @@ impl Renderer {
             source_role: &source_role,
             font_families: &typesetting.font_families,
             minimum_font_size: typesetting.min_font_size,
+            forced_font_size: typesetting.font_size,
             balloon_flows: flow_plan.placements,
             layers: Vec::new(),
             dependencies: BTreeSet::from([
@@ -577,6 +578,7 @@ struct Traversal<'a> {
     source_role: &'a AssetRole,
     font_families: &'a [String],
     minimum_font_size: f32,
+    forced_font_size: Option<f32>,
     balloon_flows: HashMap<EntityId, ResolvedPlacement>,
     layers: Vec<LayerDraft>,
     dependencies: BTreeSet<RenderDependency>,
@@ -811,9 +813,13 @@ impl Traversal<'_> {
                 .as_ref()
                 .and_then(|value| value.font_style)
                 .map(Into::into),
-            font_size: typography.as_ref().and_then(|value| value.size),
+            font_size: typography
+                .as_ref()
+                .and_then(|value| value.size)
+                .or(self.forced_font_size),
             minimum_font_size: self.minimum_font_size,
-            auto_fit: typography.as_ref().is_none_or(|value| value.auto_fit),
+            auto_fit: self.forced_font_size.is_none()
+                && typography.as_ref().is_none_or(|value| value.auto_fit),
             alignment,
             writing_mode,
             foreground_color: typography
