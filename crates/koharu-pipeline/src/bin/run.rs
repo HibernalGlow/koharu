@@ -17,7 +17,9 @@ use koharu_pipeline::{
 use koharu_rasterizer::{RasterOptions, Rasterizer};
 use koharu_renderer::Renderer;
 use koharu_scene::{AssetInput, AssetMetadata, AssetRole, At, PageDraft, Session};
-use koharu_translator::{GenerationConfig, Language, ModelSelection, Provider, ProvidersConfig};
+use koharu_translator::{GenerationConfig, Language};
+
+mod endpoint;
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Run Koharu's complete in-process pipeline")]
@@ -45,6 +47,19 @@ struct Arguments {
 
     #[arg(long, default_value = "gemma4-12b-it")]
     llm: String,
+
+    /// 翻译后端。`local` = 内置 llama.cpp + 编译期钉死的模型表（上游行为）；
+    /// `openai-compatible` = 任意 OpenAI 兼容端点（本机 llama-server / LM Studio / 在线 API）。
+    #[arg(long, value_enum, default_value = "local")]
+    provider: endpoint::TranslationBackend,
+
+    /// `--provider openai-compatible` 的端点地址，例如 https://api.deepseek.com/v1
+    #[arg(long, value_name = "URL")]
+    base_url: Option<String>,
+
+    /// 端点档是否把画面一并送过去（默认关闭；纯文本模型必须保持关闭）
+    #[arg(long)]
+    vision: bool,
 
     #[arg(long)]
     cpu: bool,
@@ -106,13 +121,7 @@ impl Arguments {
                 OcrChoice::HayaiOcr => OcrModel::HayaiOcr,
             },
             translation: TranslationConfig {
-                model: ModelSelection {
-                    provider: Provider::Local,
-                    model: Some(self.llm.clone()),
-                    quantization: None,
-                    vision: true,
-                    reasoning: true,
-                },
+                model: endpoint::selection(self.provider, &self.llm, self.vision),
                 generation: GenerationConfig::default(),
                 target_language: self.target_language,
                 instructions: self.translation_instructions.clone(),
@@ -178,7 +187,10 @@ async fn main() -> Result<()> {
     let device = koharu_ml::device(arguments.cpu);
     let pipeline = Pipeline::from_config(
         Config::memory(arguments.pipeline_config()),
-        Config::memory(ProvidersConfig::default()),
+        Config::memory(endpoint::providers(
+            arguments.provider,
+            arguments.base_url.as_deref(),
+        )?),
         device,
     )?;
     let snapshot = session.snapshot();

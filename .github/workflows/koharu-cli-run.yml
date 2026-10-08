@@ -1,6 +1,7 @@
 name: koharu-cli-run
 # 目的：只编 koharu-pipeline 里那个无头 bin（`run`），不碰 GUI、不碰前端。
 # 上游 release 只出安装包，CLI 产物没人分发 —— 这个 workflow 就是替我们自己出一个。
+# 三平台产物自足：可执行 + 非系统动态库（macOS/Linux），Windows 只带 exe。
 on:
   push:
     branches: [ci/koharu-cli]
@@ -14,14 +15,17 @@ jobs:
         include:
           - platform: macos-14
             target: aarch64-apple-darwin
-            ext: tar.gz
           - platform: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            ext: tar.gz
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
     name: run (${{ matrix.target }})
     runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -42,26 +46,36 @@ jobs:
         run: cargo build --release -p koharu-pipeline --bin run --target ${{ matrix.target }}
 
       - name: Report the dynamic dependencies (是不是真能一个文件带走)
-        shell: bash
-        run: |
-          BIN=target/${{ matrix.target }}/release/run
-          ls -l "$BIN"
-          "$BIN" --help | head -30 || true
-          if [ "$(uname)" = Darwin ]; then otool -L "$BIN"; else ldd "$BIN"; fi
-
-      - name: Bundle (可执行 + 非系统 dylib)
-        shell: bash
         run: |
           set -euo pipefail
           BIN=target/${{ matrix.target }}/release/run
+          [ -f "$BIN" ] || BIN="$BIN.exe"
+          ls -l "$BIN"
+          "$BIN" --help | head -40 || true
+          case "$(uname -s)" in
+            Darwin) otool -L "$BIN" ;;
+            Linux) ldd "$BIN" ;;
+            *) echo "windows: 无 ldd/otool，跳过（MSVC 运行时在系统里）" ;;
+          esac
+
+      - name: Bundle (可执行 + 非系统动态库)
+        run: |
+          set -euo pipefail
+          BIN=target/${{ matrix.target }}/release/run
+          [ -f "$BIN" ] || BIN="$BIN.exe"
           mkdir -p bundle/lib
-          cp "$BIN" bundle/run
-          if [ "$(uname)" = Darwin ]; then
-            otool -L "$BIN" | awk 'NR>1 {print $1}' | grep -v '^/usr/lib/^/System' > libs.txt || true
-            otool -L "$BIN" | awk 'NR>1 {print $1}' | grep -v -E '^/usr/lib/|^/System/' > libs.txt || true
-          else
-            ldd "$BIN" | awk '/=> \// {print $3}' | grep -v -E '^/lib|^/usr/lib' > libs.txt || true
-          fi
+          cp "$BIN" "bundle/$(basename "$BIN")"
+          case "$(uname -s)" in
+            Darwin)
+              otool -L "$BIN" | awk 'NR>1 {print $1}' | grep -v -E '^/usr/lib/|^/System/' > libs.txt || true
+              ;;
+            Linux)
+              ldd "$BIN" | awk '/=> \// {print $3}' | grep -v -E '^/lib|^/usr/lib' > libs.txt || true
+              ;;
+            *)
+              : > libs.txt
+              ;;
+          esac
           while read -r lib; do
             [ -f "$lib" ] || continue
             cp -L "$lib" bundle/lib/ || true

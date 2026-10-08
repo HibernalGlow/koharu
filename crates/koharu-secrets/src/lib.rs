@@ -70,13 +70,27 @@ static CREDENTIAL_STORE: LazyLock<Result<(), String>> = LazyLock::new(|| {
 });
 
 /// Load a Koharu secret by key, returning `None` when no credential exists.
+///
+/// An environment variable always wins over the OS credential store, so a
+/// headless run can be handed a key without writing anything into the keychain
+/// (`openai-compatible` reads `KOHARU_SECRET_OPENAI_COMPATIBLE`).
 pub fn get(key: &str) -> anyhow::Result<Option<SecretString>> {
+    if let Some(value) = std::env::var(env_key(key))
+        .ok()
+        .filter(|value| !value.is_empty())
+    {
+        return Ok(Some(SecretString::from(value)));
+    }
     let entry = entry(key)?;
     match entry.get_password() {
         Ok(value) => Ok(Some(SecretString::from(value))),
         Err(keyring_core::Error::NoEntry) => Ok(None),
         Err(error) => Err(error.into()),
     }
+}
+
+fn env_key(key: &str) -> String {
+    format!("KOHARU_SECRET_{}", key.to_uppercase().replace('-', "_"))
 }
 
 /// Store a Koharu secret by key.
