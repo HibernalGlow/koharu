@@ -19,6 +19,9 @@ use koharu_renderer::Renderer;
 use koharu_scene::{AssetInput, AssetMetadata, AssetRole, At, PageDraft, Session};
 use koharu_translator::{GenerationConfig, Language};
 
+// bin 的 crate root 在 `src/bin/` 下，子模块默认找 `src/bin/endpoint.rs`；
+// 放子目录是为了不让 cargo 把 `endpoint.rs` 也当成一个独立 bin，所以显式指路径。
+#[path = "run/endpoint.rs"]
 mod endpoint;
 
 #[derive(Debug, Parser)]
