@@ -799,6 +799,9 @@ impl Traversal<'_> {
             dependencies.insert(RenderDependency::Font(family.clone()));
         }
         let is_bubble = balloon_contour.is_some();
+        // 强制字号只给「框外文字」用：气泡文字的自动适配本来就以气泡高度为上限，
+        // 一旦强制就会溢出到画面上，所以气泡那一侧保留上游行为。
+        let forced_font_size = (!is_bubble).then_some(self.forced_font_size).flatten();
         let descriptor = TextNodeDescriptor {
             entity,
             text: text.clone(),
@@ -816,9 +819,9 @@ impl Traversal<'_> {
             font_size: typography
                 .as_ref()
                 .and_then(|value| value.size)
-                .or(self.forced_font_size),
+                .or(forced_font_size),
             minimum_font_size: self.minimum_font_size,
-            auto_fit: self.forced_font_size.is_none()
+            auto_fit: forced_font_size.is_none()
                 && typography.as_ref().is_none_or(|value| value.auto_fit),
             alignment,
             writing_mode,
