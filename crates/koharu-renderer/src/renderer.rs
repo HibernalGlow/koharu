@@ -50,7 +50,8 @@ const MAX_SURFACE_PIXELS: u64 = 268_435_456;
 const DEFAULT_RETAINED_NODES: usize = 2_048;
 const MAX_RESOURCE_READS: usize = 8;
 const ASSETS_KIND: &str = "dev.koharu.assets";
-const MINIMUM_FONT_SIZE: f32 = 9.0;
+/// 自动适配字号的下限默认值；实际取值来自 `[typesetting] min_font_size`。
+pub(crate) const MINIMUM_FONT_SIZE: f32 = 9.0;
 
 #[derive(Clone)]
 pub struct Renderer {
@@ -500,6 +501,7 @@ impl Renderer {
             height,
             source_role: &source_role,
             font_families: &typesetting.font_families,
+            minimum_font_size: typesetting.min_font_size,
             balloon_flows: flow_plan.placements,
             layers: Vec::new(),
             dependencies: BTreeSet::from([
@@ -574,6 +576,7 @@ struct Traversal<'a> {
     height: u32,
     source_role: &'a AssetRole,
     font_families: &'a [String],
+    minimum_font_size: f32,
     balloon_flows: HashMap<EntityId, ResolvedPlacement>,
     layers: Vec<LayerDraft>,
     dependencies: BTreeSet<RenderDependency>,
@@ -809,7 +812,7 @@ impl Traversal<'_> {
                 .and_then(|value| value.font_style)
                 .map(Into::into),
             font_size: typography.as_ref().and_then(|value| value.size),
-            minimum_font_size: MINIMUM_FONT_SIZE,
+            minimum_font_size: self.minimum_font_size,
             auto_fit: typography.as_ref().is_none_or(|value| value.auto_fit),
             alignment,
             writing_mode,
